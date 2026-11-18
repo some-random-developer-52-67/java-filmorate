@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import java.io.IOException;
 import java.io.InputStream;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -180,6 +181,21 @@ class FilmorateApiTest {
         mockMvc.perform(withJson(put("/users"), updatedUser))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("updated"));
+    }
+
+    @Test
+    void rejectsIncompleteEmailAddress() throws Exception {
+        ObjectNode user = readFixture("user").put("email", "incomplete@");
+
+
+        mockMvc.perform(withJson(post("/users"), user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString("email")));
+
+
+        mockMvc.perform(get("/users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
     }
 
     private void assertBodyIsRejected(byte[] body) throws Exception {

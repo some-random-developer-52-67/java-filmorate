@@ -1,5 +1,9 @@
 package ru.yandex.practicum.filmorate;
 
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -9,17 +13,35 @@ import ru.yandex.practicum.filmorate.exception.ValidationException;
 import ru.yandex.practicum.filmorate.model.Film;
 import ru.yandex.practicum.filmorate.model.User;
 import ru.yandex.practicum.filmorate.validation.FilmValidator;
-import ru.yandex.practicum.filmorate.validation.UserValidator;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ModelValidationTest {
 
+    private static final Clock VALIDATION_CLOCK = Clock.fixed(
+            Instant.parse("2026-01-01T12:00:00Z"),
+            ZoneOffset.UTC
+    );
+
+    private static final ValidatorFactory VALIDATOR_FACTORY = Validation.byDefaultProvider()
+            .configure()
+            .clockProvider(() -> VALIDATION_CLOCK)
+            .buildValidatorFactory();
+    private static final Validator VALIDATOR = VALIDATOR_FACTORY.getValidator();
+
     private final FilmValidator filmValidator = new FilmValidator();
-    private final UserValidator userValidator = new UserValidator();
+
+    @AfterAll
+    static void closeValidatorFactory() {
+        VALIDATOR_FACTORY.close();
+    }
 
     @Test
     void acceptsFilmOnValidationBoundaries() {
@@ -29,6 +51,7 @@ class ModelValidationTest {
         film.setDuration(1);
 
 
+        assertThat(VALIDATOR.validate(film)).isEmpty();
         assertDoesNotThrow(() -> filmValidator.validate(film));
     }
 
@@ -37,7 +60,7 @@ class ModelValidationTest {
         Film film = validFilm();
 
 
-        assertDoesNotThrow(() -> filmValidator.validate(film));
+        assertThat(VALIDATOR.validate(film)).isEmpty();
     }
 
     @ParameterizedTest
@@ -48,10 +71,7 @@ class ModelValidationTest {
         film.setName(name);
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> filmValidator.validate(film)
-        );
+        assertInvalidField(film, "name");
     }
 
     @Test
@@ -60,21 +80,22 @@ class ModelValidationTest {
         film.setDescription("a".repeat(201));
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> filmValidator.validate(film)
-        );
+        assertInvalidField(film, "description");
     }
 
-    @ParameterizedTest
-    @NullSource
-    @ValueSource(strings = {"1895-12-27"})
-    void rejectsMissingOrTooEarlyReleaseDate(String releaseDate) {
+    @Test
+    void rejectsMissingReleaseDate() {
         Film film = validFilm();
-        film.setReleaseDate(releaseDate == null
-                ? null
-                : LocalDate.parse(releaseDate)
-        );
+        film.setReleaseDate(null);
+
+
+        assertInvalidField(film, "releaseDate");
+    }
+
+    @Test
+    void rejectsReleaseDateBefore1895December28() {
+        Film film = validFilm();
+        film.setReleaseDate(LocalDate.of(1895, 12, 27));
 
 
         assertThrows(
@@ -91,33 +112,18 @@ class ModelValidationTest {
         film.setDuration(duration);
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> filmValidator.validate(film)
-        );
+        assertInvalidField(film, "duration");
     }
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {" ", "mail.example.com"})
-    void rejectsBlankEmailOrEmailWithoutAtSign(String email) {
+    @ValueSource(strings = {" ", "mail.example.com", "incomplete@"})
+    void rejectsBlankOrMalformedEmail(String email) {
         User user = validUser();
         user.setEmail(email);
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> userValidator.validate(user)
-        );
-    }
-
-    @Test
-    void acceptsEmailContainingAtSignInBasicValidation() {
-        User user = validUser();
-        user.setEmail("incomplete@");
-
-
-        assertDoesNotThrow(() -> userValidator.validate(user));
+        assertInvalidField(user, "email");
     }
 
     @ParameterizedTest
@@ -128,31 +134,25 @@ class ModelValidationTest {
         user.setLogin(login);
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> userValidator.validate(user)
-        );
+        assertInvalidField(user, "login");
     }
 
     @Test
     void acceptsBirthdayToday() {
         User user = validUser();
-        user.setBirthday(LocalDate.now());
+        user.setBirthday(LocalDate.now(VALIDATION_CLOCK));
 
 
-        assertDoesNotThrow(() -> userValidator.validate(user));
+        assertThat(VALIDATOR.validate(user)).isEmpty();
     }
 
     @Test
     void rejectsBirthdayTomorrow() {
         User user = validUser();
-        user.setBirthday(LocalDate.now().plusDays(1));
+        user.setBirthday(LocalDate.now(VALIDATION_CLOCK).plusDays(1));
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> userValidator.validate(user)
-        );
+        assertInvalidField(user, "birthday");
     }
 
     @Test
@@ -161,10 +161,13 @@ class ModelValidationTest {
         user.setBirthday(null);
 
 
-        assertThrows(
-                ValidationException.class,
-                () -> userValidator.validate(user)
-        );
+        assertInvalidField(user, "birthday");
+    }
+
+    private void assertInvalidField(Object model, String field) {
+        assertThat(VALIDATOR.validate(model))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .containsOnly(field);
     }
 
     private Film validFilm() {
