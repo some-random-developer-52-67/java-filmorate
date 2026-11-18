@@ -115,6 +115,82 @@ class FilmorateApiTest {
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
+    @Test
+    void rejectsMissingRequestBody() throws Exception {
+        assertBodyIsRejected(new byte[0]);
+    }
+
+    @Test
+    void rejectsMalformedRequestBody() throws Exception {
+        ClassPathResource fixture = new ClassPathResource("fixtures/malformed-request.json");
+
+
+        assertBodyIsRejected(fixture.getContentAsByteArray());
+    }
+
+    @Test
+    void rejectsUpdatesWithoutPositiveId() throws Exception {
+        ObjectNode film = readFixture("film").put("id", 0);
+        ObjectNode user = readFixture("user");
+
+
+        mockMvc.perform(withJson(put("/films"), film))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+        mockMvc.perform(withJson(put("/users"), user))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+    }
+
+    @Test
+    void preservesFilmAfterRejectedUpdate() throws Exception {
+        ObjectNode film = readFixture("film").put("name", "Original");
+        ObjectNode invalidFilm = film.deepCopy()
+                .put("id", 1)
+                .put("name", " ");
+
+        mockMvc.perform(withJson(post("/films"), film))
+                .andExpect(status().isCreated());
+
+
+        mockMvc.perform(withJson(put("/films"), invalidFilm))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+
+
+        mockMvc.perform(get("/films"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("Original"));
+    }
+
+    @Test
+    void usesLoginWhenDisplayNameIsMissingOrBlank() throws Exception {
+        ObjectNode user = readFixture("user");
+        user.remove("name");
+        ObjectNode updatedUser = user.deepCopy()
+                .put("id", 1)
+                .put("login", "updated")
+                .put("name", "  ");
+
+        mockMvc.perform(withJson(post("/users"), user))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("user"));
+
+
+        mockMvc.perform(withJson(put("/users"), updatedUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("updated"));
+    }
+
+    private void assertBodyIsRejected(byte[] body) throws Exception {
+        mockMvc.perform(post("/films").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+        mockMvc.perform(put("/users").contentType(APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+    }
+
     private ObjectNode readFixture(String name) throws IOException {
         ClassPathResource fixture = new ClassPathResource("fixtures/%s.json".formatted(name));
 
