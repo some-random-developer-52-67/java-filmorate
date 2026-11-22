@@ -7,6 +7,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.stream.Collectors;
 
@@ -37,14 +38,33 @@ public class ApiExceptionHandler {
         return reject("Request body is missing or malformed");
     }
 
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleInvalidParameter(MethodArgumentTypeMismatchException exception) {
+        return reject("Invalid value for parameter '%s'".formatted(exception.getName()));
+    }
+
     @ExceptionHandler(NotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ErrorResponse handleNotFound(NotFoundException exception) {
         return reject(exception.getMessage());
     }
 
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ErrorResponse handleUnexpected(Exception exception) throws Exception {
+        if (exception instanceof org.springframework.web.ErrorResponse frameworkError
+                && frameworkError.getStatusCode().is4xxClientError()) {
+            throw exception;
+        }
+
+        log.error("Unexpected request failure", exception);
+        return new ErrorResponse("Internal server error");
+    }
+
     private ErrorResponse reject(String message) {
         log.warn("Request rejected: {}", message);
         return new ErrorResponse(message);
     }
+
 }

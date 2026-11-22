@@ -35,8 +35,39 @@ public class UserService {
         return updatedUser;
     }
 
+    public User getById(long id) {
+        return userStorage.getById(id);
+    }
+
     public List<User> findAll() {
         return userStorage.findAll();
+    }
+
+    public void addFriend(long userId, long friendId) {
+        validateFriendship(userId, friendId);
+        userStorage.addFriendship(userId, friendId);
+        log.debug("Friendship is active between users {} and {}", userId, friendId);
+    }
+
+    public void removeFriend(long userId, long friendId) {
+        validateFriendship(userId, friendId);
+        userStorage.removeFriendship(userId, friendId);
+        log.debug("Friendship is inactive between users {} and {}", userId, friendId);
+    }
+
+    public List<User> findFriends(long userId) {
+        return userStorage.findFriends(userId);
+    }
+
+    public List<User> findCommonFriends(long userId, long otherId) {
+        return userStorage.findCommonFriends(userId, otherId);
+    }
+
+    private void validateFriendship(long userId, long friendId) {
+        if (userId == friendId) {
+            userStorage.getById(userId);
+            throw new ValidationException("A user cannot be friends with themselves");
+        }
     }
 
     private User withDisplayName(User user) {
