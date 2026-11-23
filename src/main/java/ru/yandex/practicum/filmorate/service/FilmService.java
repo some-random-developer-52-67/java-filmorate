@@ -2,35 +2,35 @@ package ru.yandex.practicum.filmorate.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import ru.yandex.practicum.filmorate.exception.NotFoundException;
 import ru.yandex.practicum.filmorate.exception.ValidationException;
 import ru.yandex.practicum.filmorate.model.Film;
+import ru.yandex.practicum.filmorate.storage.film.FilmStorage;
+import ru.yandex.practicum.filmorate.storage.user.UserStorage;
 import ru.yandex.practicum.filmorate.validation.FilmValidator;
 
-import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Service
 public class FilmService {
 
+    private final FilmStorage filmStorage;
+    private final UserStorage userStorage;
     private final FilmValidator filmValidator;
 
-    private final Map<Long, Film> films = new LinkedHashMap<>();
-    private long nextId = 1;
-
-    public synchronized Film create(Film film) {
+    public Film create(Film film) {
         filmValidator.validate(film);
 
-        Film createdFilm = save(film, nextId++);
+        Film createdFilm = filmStorage.create(film);
         log.info("Created film with id {}", createdFilm.getId());
         return createdFilm;
     }
 
-    public synchronized Film update(Film film) {
+    public Film update(Film film) {
         Long id = film.getId();
 
         if (id == null || id <= 0) {
@@ -39,34 +39,42 @@ public class FilmService {
 
         filmValidator.validate(film);
 
-        if (!films.containsKey(id)) {
-            throw new NotFoundException("Film with id %d was not found".formatted(id));
-        }
-
-        Film updatedFilm = save(film, id);
+        Film updatedFilm = filmStorage.update(film);
         log.info("Updated film with id {}", id);
         return updatedFilm;
     }
 
-    public synchronized List<Film> findAll() {
-        return films.values().stream()
-                .map(film -> copyWithId(film, film.getId()))
+    public Film getById(long id) {
+        return filmStorage.getById(id);
+    }
+
+    public List<Film> findAll() {
+        return filmStorage.findAll();
+    }
+
+    public void addLike(long filmId, long userId) {
+        userStorage.addFilmLike(userId, filmId);
+        log.debug("Film {} has a like from user {}", filmId, userId);
+    }
+
+    public void removeLike(long filmId, long userId) {
+        userStorage.removeFilmLike(userId, filmId);
+        log.debug("Film {} has no like from user {}", filmId, userId);
+    }
+
+    public List<Film> findPopular(int count) {
+        if (count < 0) {
+            throw new ValidationException("Count must be non-negative");
+        }
+
+        Comparator<Film> byPopularity = Comparator.<Film>comparingInt(film -> film.getLikedUserIds().size())
+                .reversed()
+                .thenComparing(Film::getId);
+
+        return filmStorage.findAll().stream()
+                .sorted(byPopularity)
+                .limit(count)
                 .toList();
     }
 
-    private Film save(Film film, long id) {
-        Film savedFilm = copyWithId(film, id);
-        films.put(id, savedFilm);
-        return copyWithId(savedFilm, id);
-    }
-
-    private Film copyWithId(Film film, long id) {
-        return new Film(
-                id,
-                film.getName(),
-                film.getDescription(),
-                film.getReleaseDate(),
-                film.getDuration()
-        );
-    }
 }

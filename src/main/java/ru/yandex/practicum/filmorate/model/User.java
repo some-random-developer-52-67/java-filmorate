@@ -1,5 +1,6 @@
 package ru.yandex.practicum.filmorate.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -10,6 +11,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Data
 @NoArgsConstructor
@@ -31,4 +34,8 @@ public class User {
     @NotNull
     @PastOrPresent
     private LocalDate birthday;
+
+    @JsonIgnore
+    private final Set<Long> friendIds = new LinkedHashSet<>();
+
 }
